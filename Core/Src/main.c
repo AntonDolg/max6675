@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "MAX6675.h"
+#include "string.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,10 +42,13 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+extern SPI_HandleTypeDef hspi1;
+
 UART_HandleTypeDef huart5;
 
 /* USER CODE BEGIN PV */
-
+float temp=0;
+uint8_t temp_uint8;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -52,6 +56,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_UART5_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -148,13 +153,62 @@ void init() {
 
 }
 
+void IntToString(int value, char* buffer) {
+    // Указатель на текущую позицию в буфере
+    char* ptr = buffer;
+
+    // Обработка отрицательных значений
+    if (value < 0) {
+        *ptr++ = '-';
+        value = -value; // Делаем значение положительным для дальнейших расчетов
+    }
+
+    // Получение целых цифр
+    int temp = value;
+    int digits = 0;
+
+    // Подсчет количества цифр
+    do {
+        digits++;
+        temp /= 10;
+    } while (temp > 0);
+
+    // Заполнение буфера с конца
+    ptr += digits; // Перемещаем указатель на конец буфера
+    *ptr-- = '\0'; // Завершаем строку нулевым символом
+
+    do {
+        *ptr-- = '0' + (value % 10); // Получаем последнюю цифру и записываем её в буфер
+        value /= 10; // Убираем последнюю цифру из числа
+    } while (value > 0);
+
+    // Если число было отрицательным, добавляем знак минус в начало
+    if (buffer[0] == '-') {
+        buffer[1] = '-';
+        buffer[2] = '\0'; // Завершаем строку нулевым символом после знака минус
+    }
+}
+
+
+
 void loop() {
+	LCD_SendCommand(LCD_ADDR, 0b00000001);
+	HAL_Delay(50);
+	char buffer[16];
+	temp=Max6675_Read_Temp();
+	temp_uint8 = (uint8_t)(temp);
+	IntToString(temp_uint8, buffer);
+	LCD_SendCommand(LCD_ADDR, 0b10000000);
+	LCD_SendString(LCD_ADDR, "t=");
+	HAL_Delay(1000);
 	LCD_SendCommand(LCD_ADDR, 0b11000000);
-	LCD_SendString(LCD_ADDR, "  over I2C bus");
+	LCD_SendString(LCD_ADDR, buffer);
     HAL_Delay(1000);
-    LCD_SendCommand(LCD_ADDR, 0b11000000);
-    LCD_SendString(LCD_ADDR, "  string test");
-    HAL_Delay(1000);
+
+//    LCD_SendCommand(LCD_ADDR, 0b11000000);
+//    LCD_SendData(LCD_ADDR, temp);
+//    HAL_Delay(1000);
+
 }
 /* USER CODE END 0 */
 
@@ -188,6 +242,7 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_UART5_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 //  I2C_send(0b00110000,0);   // 8ми битный интерфейс
 //  I2C_send(0b00000010,0);   // установка курсора в начале строки
@@ -203,6 +258,7 @@ int main(void)
 //	  LCD_SendString("  Hello");
 //	   I2C_send(0b11000000,0);   // перевод строки
 //	   LCD_SendString("    Habr");
+
 	  loop();
     /* USER CODE END WHILE */
 
@@ -301,6 +357,44 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES_RXONLY;
+  hspi1.Init.DataSize = SPI_DATASIZE_16BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
   * @brief UART5 Initialization Function
   * @param None
   * @retval None
@@ -340,12 +434,23 @@ static void MX_UART5_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PB1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 }
 
@@ -397,7 +502,7 @@ static void MX_GPIO_Init(void)
 //	         // если да, то выходим из бесконечного цикла
 //                if(res == HAL_OK) break;
 //	    }
-//        // операция И с 1111 0000 приводит к обнулению бит с 0 по 3, остаются биты с 4 по 7
+//        // операция �? с 1111 0000 приводит к обнулению бит с 0 по 3, остаются биты с 4 по 7
 //	uint8_t up = data & 0xF0;
 //        // то же самое, но data сдвигается на 4 бита влево
 //        uint8_t lo = (data << 4) & 0xF0;
